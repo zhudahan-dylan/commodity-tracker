@@ -3,67 +3,31 @@ name: Build Windows EXE
 on:
   push:
     branches: [main, master]
-  workflow_dispatch:   # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: 安装 Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: 安装依赖
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller playwright openpyxl
 
-      - name: 安装 Playwright Chromium
-        run: |
-          playwright install chromium
+      - name: Install Chromium
+        run: playwright install chromium
 
-      - name: PyInstaller 打包
-        run: |
-          python -m PyInstaller `
-            --onefile `
-            --console `
-            --name=commodity_tracker `
-            --clean `
-            --noconfirm `
-            --hidden-import playwright `
-            --hidden-import playwright.async_api `
-            --hidden-import playwright.sync_api `
-            --hidden-import playwright._impl._driver `
-            --hidden-import openpyxl `
-            --hidden-import openpyxl.chart `
-            --hidden-import openpyxl.chart.axis `
-            --hidden-import openpyxl.styles `
-            --hidden-import openpyxl.utils `
-            --hidden-import asyncio `
-            --collect-all playwright `
-            main.py
+      - name: Run build script
+        run: python build_windows.py
 
-      - name: 组装发布包
-        run: |
-          mkdir dist\pkg\data
-          copy dist\commodity_tracker.exe dist\pkg\
-          copy config.py dist\pkg\
-          copy scraper.py dist\pkg\
-          copy storage.py dist\pkg\
-          copy chart_builder.py dist\pkg\
-          echo @echo off > dist\pkg\setup.bat
-          echo chcp 65001 ^>nul >> dist\pkg\setup.bat
-          echo echo 正在注册每日 9:30 定时任务... >> dist\pkg\setup.bat
-          echo schtasks /create /tn "CommodityTracker" /tr "\"%%~dp0commodity_tracker.exe\" run" /sc daily /st 09:30 /f >> dist\pkg\setup.bat
-          echo if %%ERRORLEVEL%% EQU 0 (echo ✅ 注册成功) else (echo ❌ 请右键以管理员身份运行) >> dist\pkg\setup.bat
-          echo pause >> dist\pkg\setup.bat
-
-      - name: 上传产物
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: commodity_tracker_windows
