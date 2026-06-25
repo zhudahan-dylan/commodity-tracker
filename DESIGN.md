@@ -369,3 +369,112 @@ data/commodity_prices.xlsx
 - [x] 首次运行验证（真实数据 12 条）
 - [x] launchd 定时任务已安装（每日 9:30）
 - [x] `DESIGN.md` 使用说明
+- [x] Windows 移植（build_windows.py + GitHub Actions CI）
+- [x] `README_WINDOWS.md` 移植指南
+
+---
+
+## 9. 开发经验总结
+
+### 9.1 设计先行，预览确认
+
+**问题**：第一版汇总 Sheet 直接罗列原始数据，用户期望的是品类级一览视图（走势、涨跌箭头）。
+
+**教训**：在写正式代码前，用 `demo_preview.py` 生成模拟数据预览 Excel，让用户逐轮确认布局。三轮调整（汇总页设计 → 图表坐标轴刻度 → 按单位拆图）都在预览阶段完成，正式代码一次到位。
+
+**原则**：用模拟数据生成「效果预览」→ 用户确认 → 再写正式采集逻辑。UI 层面的迭代成本远低于代码层面。
+
+### 9.2 Python 版本兼容性
+
+**问题**：macOS 自带 Python 3.9，`X | None` 联合类型语法需要 3.10+。多处 `-> dict | None` 导致 `TypeError`。
+
+**教训**：
+- 写脚本工具时应保守使用类型注解，`# type: ignore` 注释比炫技更重要
+- `from __future__ import annotations` 可以规避大部分问题
+- CI 构建时锁定 Python 3.11，但开发机可能还在 3.9
+
+**修复**：所有 `X | None` 改为注释形式 `# -> X | None`。
+
+### 9.3 openpyxl 的 MergedCell 陷阱
+
+**问题**：重建图表/汇总页时需要清除旧内容，但 `ws.cell(row, col).value = None` 遇到合并单元格会抛 `AttributeError: 'MergedCell' object attribute 'value' is read-only`。
+
+**教训**：openpyxl 中合并单元格后不能直接 `.value = None`，必须先 `ws.unmerge_cells(str(range))`。
+
+**修复**：在清除数据区域前，遍历 `ws.merged_cells.ranges`，先 unmerge 再清值，外层 try/except 兜底。
+
+### 9.4 数据源多级容错
+
+**问题**：硬编码 URL 脆弱，网站改版后链接失效。
+
+**方案**（三级 fallback）：
+
+| 级别 | 策略 | 场景 |
+|------|------|------|
+| 1 | 从品类列表页动态发现链接 | URL 路径变更后自适应 |
+| 2 | 已知 URL 模式 `/sf/{id}.html` | 页面结构未大变 |
+| 3 | 打印警告，跳过该商品，继续采集其他 | 完全不可用 |
+
+**原则**：单点失败不中断全局，清晰日志标注失败原因。
+
+### 9.5 Playwright 在打包环境中的浏览器管理
+
+**问题**：PyInstaller 打包后，`sys.executable` 是 exe 自身，无法执行 `python -m playwright install chromium`。裸机用户没有 Chromium。
+
+**方案**：
+
+```
+main.py 启动 → 尝试 launch chromium
+    ├─ 成功 → 继续采集
+    └─ 失败 → 三级安装尝试:
+        1. bundled playwright driver (PyInstaller --collect-all)
+        2. python -m playwright install chromium
+        3. npx playwright install chromium
+    └─ 全失败 → 打印手动安装指令
+```
+
+**原则**：exe 不含 Chromium（省 130MB），首次运行自动下载。用户体验：双击 → 看一次进度条 → 之后秒开。
+
+### 9.6 CI/CD 跨平台构建
+
+**问题**：macOS 上无法交叉编译 Windows exe。用户没有 Windows 机器。
+
+**方案**：GitHub Actions + `windows-latest` runner。
+
+**踩坑**：
+- GitHub Actions 的 `run: |` 在 Windows runner 上默认 shell 是 PowerShell，`` ` `` 换行符不生效 → 改用 `build_windows.py` 封装所有逻辑
+- Personal Access Token 必须勾选 `workflow` 权限才能推送 `.github/workflows/*.yml`
+- Artifact 下载需登录 GitHub，直接给 Actions Run 页面链接最方便
+
+### 9.7 去重键设计
+
+**问题**：同一商品同一天多次采集会产生重复行。
+
+**方案**：去重键 = `(日期, 商品名称)`。品类名未纳入去重键，因为同一商品名不会跨品类出现。去重在写入前完成：读取已有数据 → 构建 `set` → 逐条判断 → 仅追加新记录。
+
+### 9.8 图表数据刷新策略
+
+**问题**：折线图引用固定单元格范围，追加数据后范围不变。
+
+**方案**：每次追加后**全量重建**。流程：读取该品类全部记录 → 透视 → 按单位分组 → 清图表区 → 写新透视表 → 嵌折线图。简单粗暴但保证图表始终反映最新数据。
+
+**代价**：品类数据量大后重建耗时会增加。后续可优化为增量更新，当前数据量（每日 ~15 条）完全可接受。
+
+### 9.9 品类动态发现
+
+**问题**：硬编码品类列表无法适应网站新增品类。
+
+**方案**：品类名从页面文本实时解析，Excel Sheet 按 `get_or_create` 模式自动创建。config.py 中无品类枚举。
+
+### 9.10 经验检查清单
+
+开发类似工具时的自检项：
+
+- [ ] 是否先用模拟数据生成预览让用户确认？
+- [ ] 类型注解是否兼容目标环境的最低 Python 版本？
+- [ ] Excel 操作是否处理了合并单元格？
+- [ ] 去重逻辑的 key 是否覆盖所有重复场景？
+- [ ] 单个数据源失败是否会中断全局？
+- [ ] 首次运行 / 裸机环境是否考虑了依赖缺失？
+- [ ] CI 构建是否在目标平台上测试过？
+- [ ] 图表刷新策略是全量还是增量？数据量预期多大？
