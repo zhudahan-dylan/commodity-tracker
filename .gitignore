@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+data/*.xlsx
+dist/
+build/
+*.spec
+*.egg-info/
+.DS_Store
