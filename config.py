@@ -5,8 +5,10 @@ Commodity Tracker — Global Configuration
 # ── Target ──
 BASE_URL = "https://www.100ppi.com"
 
-# ── Output ──
-OUTPUT_DIR = "./data"
+# ── Output (relative to this file, so both manual & scheduled use same path) ──
+import os as _os
+_OUTPUT_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "data")
+OUTPUT_DIR = _OUTPUT_DIR
 EXCEL_FILE = "commodity_prices.xlsx"
 
 # ── Browser ──
