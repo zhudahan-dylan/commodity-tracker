@@ -240,7 +240,7 @@ def rebuild_charts(ws, cat_name):  # cat_name: str
         chart.y_axis.majorGridlines = ChartLines()
         chart.x_axis.majorTickMark = "out"
         chart.x_axis.tickLblPos = "nextTo"
-        chart.legend.position = "b"
+        chart.legend = None
 
         cats = Reference(ws, min_col=1, min_row=pivot_start + 1, max_row=pivot_end)
         data_ref = Reference(ws, min_col=2, min_row=pivot_start, max_row=pivot_end)
