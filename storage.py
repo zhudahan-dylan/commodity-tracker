@@ -143,9 +143,8 @@ def _ensure_category_sheet(wb: Workbook, cat_name: str) -> "Worksheet":
         ws.cell(row=1, column=1, value=f"📊 {cat_name} — 价格趋势").font = TITLE_FONT
         ws.cell(row=1, column=1).alignment = LEFT_CENTER
 
-        # Leave rows 2-N for chart area, write data headers at a fixed offset
-        # We'll place data headers at row 50 to leave room for charts
-        data_header_row = 50
+        # Leave rows 2-N for chart area, write data headers far below
+        data_header_row = 100
         ws.merge_cells(start_row=data_header_row - 1, start_column=1,
                         end_row=data_header_row - 1, end_column=6)
         ws.cell(row=data_header_row - 1, column=1,
@@ -163,7 +162,7 @@ def _find_data_bounds(ws):  # -> tuple[int, int] | None
     Find the data table bounds in a category sheet.
     Returns (header_row, last_data_row) or None.
     """
-    for row in range(1, ws.max_row + 1):
+    for row in range(60, ws.max_row + 1):
         a1 = ws.cell(row=row, column=1).value
         if a1 and str(a1).strip() == "日期":
             a2 = ws.cell(row=row, column=2).value
@@ -226,7 +225,7 @@ def append_records(records: list[dict]) -> int:
         if bounds:
             next_row = bounds[1] + 1
         else:
-            next_row = 51   # first data row after header at row 50
+            next_row = 101  # first data row after header at row 100
 
         ws.cell(row=next_row, column=1, value=str(rec.get("日期", "")))
         ws.cell(row=next_row, column=2, value=str(rec.get("商品名称", "")))

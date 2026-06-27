@@ -47,7 +47,7 @@ def _find_data_table_bounds(ws):  # -> tuple[int, int, int] | None
     Returns (header_row, first_data_row, last_data_row) or None.
     We identify the data table by the header row containing '日期'.
     """
-    for row in range(1, ws.max_row + 1):
+    for row in range(60, ws.max_row + 1):
         a1 = ws.cell(row=row, column=1).value
         if a1 and str(a1).strip() == "日期":
             # Make sure column 2 also has a matching header
