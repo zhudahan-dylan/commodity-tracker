@@ -152,12 +152,6 @@ def rebuild_charts(ws, cat_name):  # cat_name: str
 
     sorted_dates, comm_prices, comm_units = _pivot(records)
 
-    # Group commodities by unit
-    by_unit: dict[str, list[str]] = defaultdict(list)
-    for name in comm_prices:
-        unit = comm_units.get(name, "元/吨")
-        by_unit[unit].append(name)
-
     # ── Clear old chart area (rows 1 to data_header_row-1) ──
     # Unmerge all merged cells in this range first
     merged_to_unmerge = []
@@ -172,7 +166,10 @@ def rebuild_charts(ws, cat_name):  # cat_name: str
             try:
                 ws.cell(row=r, column=c).value = None
             except AttributeError:
-                pass  # skip merged cells already handled
+                pass
+
+    # ── Remove old charts (prevent accumulation) ──
+    ws._charts = []
 
     current_row = 1
 
@@ -182,65 +179,67 @@ def rebuild_charts(ws, cat_name):  # cat_name: str
     ws.cell(row=1, column=1).alignment = LEFT_CENTER
     current_row = 3
 
-    # ── One chart block per unit ──
-    for unit, comm_names in by_unit.items():
-        pivot_start = current_row
+    # ── ONE chart per sheet: all commodities together ──
+    all_names = list(comm_prices.keys())
+    if not all_names:
+        return
 
-        # Header row
-        ws.cell(row=current_row, column=1, value="日期")
-        for ci, name in enumerate(comm_names):
-            ws.cell(row=current_row, column=2 + ci, value=name)
-        num_cols = 1 + len(comm_names)
-        _style_row(ws, current_row, num_cols, font=HEADER_FONT, fill=HEADER_FILL, align=CENTER)
+    pivot_start = current_row
+
+    # Header row: 日期 | 黄金(元/克) | 白银(元/吨) | ...
+    ws.cell(row=current_row, column=1, value="日期")
+    for ci, name in enumerate(all_names):
+        unit = comm_units.get(name, "")
+        label = f"{name}({unit})" if unit else name
+        ws.cell(row=current_row, column=2 + ci, value=label)
+    num_cols = 1 + len(all_names)
+    _style_row(ws, current_row, num_cols, font=HEADER_FONT, fill=HEADER_FILL, align=CENTER)
+    current_row += 1
+
+    # Data rows
+    for di, d in enumerate(sorted_dates):
+        ws.cell(row=current_row, column=1, value=d)
+        for ci, name in enumerate(all_names):
+            val = comm_prices[name].get(d)
+            ws.cell(row=current_row, column=2 + ci, value=val)
+        _style_row(ws, current_row, num_cols, font=DATA_FONT, align=CENTER,
+                   fill=ALT_FILL if di % 2 == 0 else None)
         current_row += 1
 
-        # Data rows
-        for di, d in enumerate(sorted_dates):
-            ws.cell(row=current_row, column=1, value=d)
-            for ci, name in enumerate(comm_names):
-                val = comm_prices[name].get(d)
-                ws.cell(row=current_row, column=2 + ci, value=val)
-            _style_row(ws, current_row, num_cols, font=DATA_FONT, align=CENTER,
-                       fill=ALT_FILL if di % 2 == 0 else None)
-            current_row += 1
+    pivot_end = current_row - 1
 
-        pivot_end = current_row - 1
+    # ── Single chart ──
+    chart = LineChart()
+    chart.title = f"{cat_name} — 价格趋势"
+    chart.width  = CHART_WIDTH
+    chart.height = CHART_HEIGHT
 
-        # ── Build chart ──
-        chart = LineChart()
-        chart.title = f"{cat_name} — 价格趋势 ({unit})"
-        chart.width  = CHART_WIDTH
-        chart.height = CHART_HEIGHT
+    chart.y_axis.delete = False
+    chart.x_axis.delete = False
+    chart.y_axis.title = "价格"
+    chart.x_axis.title = "日期"
+    chart.y_axis.numFmt = '#,##0'
+    chart.y_axis.majorTickMark = "out"
+    chart.y_axis.minorTickMark = "none"
+    chart.y_axis.tickLblPos = "nextTo"
+    chart.y_axis.majorGridlines = ChartLines()
+    chart.x_axis.majorTickMark = "out"
+    chart.x_axis.tickLblPos = "nextTo"
+    chart.legend.position = "b"
 
-        chart.y_axis.delete = False
-        chart.x_axis.delete = False
-        chart.y_axis.title = unit
-        chart.x_axis.title = "日期"
-        chart.y_axis.numFmt = '#,##0'
-        chart.y_axis.majorTickMark = "out"
-        chart.y_axis.minorTickMark = "none"
-        chart.y_axis.tickLblPos = "nextTo"
-        chart.y_axis.majorGridlines = ChartLines()
-        chart.y_axis.crosses = "autoZero"
-        chart.x_axis.majorTickMark = "out"
-        chart.x_axis.tickLblPos = "nextTo"
-        chart.legend.position = "b"
+    cats = Reference(ws, min_col=1, min_row=pivot_start + 1, max_row=pivot_end)
 
-        cats = Reference(ws, min_col=1, min_row=pivot_start + 1, max_row=pivot_end)
+    for ci in range(len(all_names)):
+        data_ref = Reference(ws, min_col=2 + ci, min_row=pivot_start, max_row=pivot_end)
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats)
+        if ci < len(SERIES_COLORS):
+            chart.series[ci].graphicalProperties.line.solidFill = SERIES_COLORS[ci]
+        chart.series[ci].marker.symbol = "circle"
+        chart.series[ci].marker.size = 5
 
-        for ci in range(len(comm_names)):
-            data_ref = Reference(ws, min_col=2 + ci, min_row=pivot_start, max_row=pivot_end)
-            chart.add_data(data_ref, titles_from_data=True)
-            chart.set_categories(cats)
-            if ci < len(SERIES_COLORS):
-                chart.series[ci].graphicalProperties.line.solidFill = SERIES_COLORS[ci]
-            chart.series[ci].marker.symbol = "circle"
-            chart.series[ci].marker.size = 5
-
-        chart.anchor = f"H{pivot_start}"
-        ws.add_chart(chart, f"H{pivot_start}")
-
-        current_row += 2   # gap between unit blocks
+    chart.anchor = f"H{pivot_start}"
+    ws.add_chart(chart, f"H{pivot_start}")
 
     # ── Adjust column widths for chart area ──
     _auto_width(ws, 7, current_row)
