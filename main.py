@@ -86,11 +86,31 @@ def _ensure_browser():
 #  Commands
 # ═══════════════════════════════════════════════════════
 
+def _wait_for_network(retries=5, delay=30) -> bool:
+    """Wait for internet connectivity before scraping (Mac wake-from-sleep delay)."""
+    import time
+    for i in range(retries):
+        try:
+            import socket
+            socket.create_connection(("www.100ppi.com", 443), timeout=5)
+            return True
+        except OSError:
+            if i < retries - 1:
+                print(f"  ⏳ 等待网络连接... ({i+1}/{retries})")
+                time.sleep(delay)
+    return False
+
+
 def cmd_scrape() -> int:
     """Scrape homepage and save to Excel."""
     print("=" * 60)
     print("  大宗商品价格采集工具 — 数据来源: 生意社 (100ppi.com)")
     print("=" * 60)
+
+    # Wait for network (handles Mac wake-from-sleep WiFi delay)
+    if not _wait_for_network():
+        print("\n❌ 网络不可用，放弃本次采集。")
+        return 1
 
     # Ensure browser is ready
     if not _ensure_browser():
