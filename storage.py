@@ -153,7 +153,6 @@ def _ensure_category_sheet(wb: Workbook, cat_name: str) -> "Worksheet":
             ws.cell(row=data_header_row, column=c, value=h)
         _style_row(ws, data_header_row, len(DATA_HEADERS),
                    font=HEADER_FONT, fill=HEADER_FILL, align=CENTER)
-        ws.freeze_panes = f"A{data_header_row + 1}"
     return ws
 
 
@@ -237,7 +236,8 @@ def append_records(records: list[dict]) -> int:
                    fill=ALT_FILL if next_row % 2 == 0 else None)
 
         # Update auto-filter
-        ws.auto_filter.ref = f"A{50}:F{next_row}"
+        header_row = bounds[0] if bounds else 100
+        ws.auto_filter.ref = f"A{header_row}:F{next_row}"
 
         existing.add(key)
         new_count += 1

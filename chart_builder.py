@@ -231,8 +231,6 @@ def rebuild_charts(ws, cat_name):  # cat_name: str
 
         chart.y_axis.delete = False
         chart.x_axis.delete = False
-        chart.y_axis.title = unit
-        chart.x_axis.title = "日期"
         chart.y_axis.numFmt = '#,##0'
         chart.y_axis.majorTickMark = "out"
         chart.y_axis.minorTickMark = "none"
