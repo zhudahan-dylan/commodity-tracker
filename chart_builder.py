@@ -179,67 +179,87 @@ def rebuild_charts(ws, cat_name):  # cat_name: str
     ws.cell(row=1, column=1).alignment = LEFT_CENTER
     current_row = 3
 
-    # ── ONE chart per sheet: all commodities together ──
+    # ── One chart per commodity, vertically tiled ──
     all_names = list(comm_prices.keys())
     if not all_names:
         return
 
-    pivot_start = current_row
-
-    # Header row: 日期 | 黄金(元/克) | 白银(元/吨) | ...
-    ws.cell(row=current_row, column=1, value="日期")
-    for ci, name in enumerate(all_names):
+    for name in all_names:
         unit = comm_units.get(name, "")
-        label = f"{name}({unit})" if unit else name
-        ws.cell(row=current_row, column=2 + ci, value=label)
-    num_cols = 1 + len(all_names)
-    _style_row(ws, current_row, num_cols, font=HEADER_FONT, fill=HEADER_FILL, align=CENTER)
-    current_row += 1
 
-    # Data rows
-    for di, d in enumerate(sorted_dates):
-        ws.cell(row=current_row, column=1, value=d)
-        for ci, name in enumerate(all_names):
-            val = comm_prices[name].get(d)
-            ws.cell(row=current_row, column=2 + ci, value=val)
-        _style_row(ws, current_row, num_cols, font=DATA_FONT, align=CENTER,
-                   fill=ALT_FILL if di % 2 == 0 else None)
+        # --- Sub-title for this commodity ---
+        ws.merge_cells(start_row=current_row, start_column=1,
+                       end_row=current_row, end_column=5)
+        sub = ws.cell(row=current_row, column=1,
+                      value=f"▎{name} ({unit})")
+        sub.font = SECTION_FONT
+        sub.alignment = LEFT_CENTER
         current_row += 1
 
-    pivot_end = current_row - 1
+        pivot_start = current_row
 
-    # ── Single chart ──
-    chart = LineChart()
-    chart.title = f"{cat_name} — 价格趋势"
-    chart.width  = CHART_WIDTH
-    chart.height = CHART_HEIGHT
+        # Header: 日期 | 价格
+        ws.cell(row=current_row, column=1, value="日期")
+        ws.cell(row=current_row, column=2, value=f"价格({unit})")
+        _style_row(ws, current_row, 2, font=HEADER_FONT, fill=HEADER_FILL, align=CENTER)
+        current_row += 1
 
-    chart.y_axis.delete = False
-    chart.x_axis.delete = False
-    chart.y_axis.title = "价格"
-    chart.x_axis.title = "日期"
-    chart.y_axis.numFmt = '#,##0'
-    chart.y_axis.majorTickMark = "out"
-    chart.y_axis.minorTickMark = "none"
-    chart.y_axis.tickLblPos = "nextTo"
-    chart.y_axis.majorGridlines = ChartLines()
-    chart.x_axis.majorTickMark = "out"
-    chart.x_axis.tickLblPos = "nextTo"
-    chart.legend.position = "b"
+        # Data rows for this commodity
+        for di, d in enumerate(sorted_dates):
+            val = comm_prices[name].get(d)
+            if val is None:
+                continue
+            ws.cell(row=current_row, column=1, value=d)
+            ws.cell(row=current_row, column=2, value=val)
+            _style_row(ws, current_row, 2, font=DATA_FONT, align=CENTER,
+                       fill=ALT_FILL if di % 2 == 0 else None)
+            current_row += 1
 
-    cats = Reference(ws, min_col=1, min_row=pivot_start + 1, max_row=pivot_end)
+        pivot_end = current_row - 1
 
-    for ci in range(len(all_names)):
-        data_ref = Reference(ws, min_col=2 + ci, min_row=pivot_start, max_row=pivot_end)
+        # Jump to next row if only 1 data point (avoid empty chart)
+        data_rows = pivot_end - pivot_start
+        if data_rows < 1:
+            current_row += 1
+            continue
+
+        # --- Chart for this commodity ---
+        chart = LineChart()
+        chart.title = name
+        chart.width  = 18
+        chart.height = 10
+
+        chart.y_axis.delete = False
+        chart.x_axis.delete = False
+        chart.y_axis.title = unit
+        chart.x_axis.title = "日期"
+        chart.y_axis.numFmt = '#,##0'
+        chart.y_axis.majorTickMark = "out"
+        chart.y_axis.minorTickMark = "none"
+        chart.y_axis.tickLblPos = "nextTo"
+        chart.y_axis.majorGridlines = ChartLines()
+        chart.x_axis.majorTickMark = "out"
+        chart.x_axis.tickLblPos = "nextTo"
+        chart.legend.position = "b"
+
+        cats = Reference(ws, min_col=1, min_row=pivot_start + 1, max_row=pivot_end)
+        data_ref = Reference(ws, min_col=2, min_row=pivot_start, max_row=pivot_end)
         chart.add_data(data_ref, titles_from_data=True)
         chart.set_categories(cats)
-        if ci < len(SERIES_COLORS):
-            chart.series[ci].graphicalProperties.line.solidFill = SERIES_COLORS[ci]
-        chart.series[ci].marker.symbol = "circle"
-        chart.series[ci].marker.size = 5
+        if SERIES_COLORS:
+            chart.series[0].graphicalProperties.line.solidFill = SERIES_COLORS[0]
+        chart.series[0].marker.symbol = "circle"
+        chart.series[0].marker.size = 4
 
-    chart.anchor = f"H{pivot_start}"
-    ws.add_chart(chart, f"H{pivot_start}")
+        # Place chart to the right of data, anchor at the data start
+        chart.anchor = f"D{pivot_start}"
+        ws.add_chart(chart, f"D{pivot_start}")
 
-    # ── Adjust column widths for chart area ──
-    _auto_width(ws, 7, current_row)
+        current_row += 2   # gap between commodities
+
+    # ── Adjust column widths ──
+    _auto_width(ws, 5, current_row)
+    # Ensure chart columns have room
+    for col_letter in ["A", "B", "C"]:
+        if ws.column_dimensions[col_letter].width < 14:
+            ws.column_dimensions[col_letter].width = 14
